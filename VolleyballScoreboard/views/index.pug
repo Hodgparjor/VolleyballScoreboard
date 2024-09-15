@@ -5,7 +5,6 @@ html(lang='en')
     meta(name='viewport' content='width=device-width, initial-scale=1.0')
     title Volleyball Scoreboard
     link(href='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css' rel='stylesheet')
-    //- script(src='/socket.io/socket.io.js')
     script(src='https://code.jquery.com/jquery-3.6.0.min.js')
 
   body
@@ -14,6 +13,11 @@ html(lang='en')
       .row
         .col-md-12
           button#addMatchBtn.btn.btn-primary(data-bs-toggle='modal', data-bs-target='#addMatchModal') Add New Match
+          select#filterStatus
+            option(value="ALL") Wszystkie
+            option(value="PLANNED") Planowane
+            option(value="IN_PROGRESS") W toku
+            option(value="FINISHED") Zakończone
           table.table.table-striped
             thead
               tr
@@ -22,6 +26,7 @@ html(lang='en')
                 th Team B
                 th Result
                 th Status
+                th Actions
             tbody#matchesList
               // Mecze zostaną załadowane z API
 
@@ -54,73 +59,117 @@ html(lang='en')
             button.btn.btn-primary#submitMatch(type='submit' form='addMatchForm') Add Match
 
     script(src='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js')
-    
+
 script.
   document.addEventListener('DOMContentLoaded', function() {
     console.log("DOM fully loaded and parsed");
 
+    updateMatchList();
+
+    // Funkcja otwierająca szczegóły meczu
+    function openMatchDetails(matchId) {
+      fetch(`/matches/match/${matchId}`, {
+        method: 'GET'
+      }).then(res => {
+        if (res.ok) {
+          location.assign(res.url);
+        }
+      })
+    }
+
+    // Filtr statusów meczów
+    filterStatus.addEventListener('change', function () {
+      updateMatchList(filterStatus.value);
+    });
+
+    function updateMatchList(statusFilter = 'ALL') {
     // Pobierz mecze z API
     fetch('/matches')
     .then(res => res.json())
     .then(data => {
       console.log("Matches fetched: ", data);  // Debugging log
       const matchesList = document.getElementById('matchesList');
-      data.forEach(match => {
+      matchesList.innerHTML = "";
+      data.filter(match => statusFilter === 'ALL' || match.status === statusFilter).forEach(match => {
         const row = document.createElement('tr');
-        row.innerHTML = `<td>${(new Date(match.date)).toLocaleString()}</td><td>${match.teama_name}</td><td>${match.teamb_name}</td><td>${match.result}</td><td>${match.status}</td>`;
+        row.innerHTML = `
+          <td>${(new Date(match.date)).toLocaleString()}</td>
+          <td>${match.teama_name}</td>
+          <td>${match.teamb_name}</td>
+          <td>${match.result}</td>
+          <td>${match.status}</td>
+          <td>
+            <button class="btn btn-info btn-sm view-details" data-id="${match.id}">View</button>
+            <button class="btn btn-success btn-sm copy-data" data-id="${match.id}">Copy</button>
+            <button class="btn btn-danger btn-sm delete-match" data-id="${match.id}">Delete</button>
+          </td>`;
         matchesList.appendChild(row);
       });
+
+      // Dodaj event listener do przycisków
+      document.querySelectorAll('.view-details').forEach(button => {
+        button.addEventListener('click', function() {
+          const matchId = this.dataset.id;
+          openMatchDetails(matchId);
+        });
+      });
+
+      document.querySelectorAll('.copy-data').forEach(button => {
+        button.addEventListener('click', function() {
+          const matchId = this.dataset.id;
+          copyMatchData(matchId);
+        });
+      });
+
+      document.querySelectorAll('.delete-match').forEach(button => {
+        button.addEventListener('click', function() {
+          const matchId = this.dataset.id;
+          deleteMatch(matchId);
+        });
+      });
     });
+    }
+
+    // Funkcja kopiowania danych meczu do schowka
+    function copyMatchData(matchId) {
+      fetch(`/matches/${matchId}`)
+      .then(res => res.json())
+      .then(data => {
+        //- const formattedData = `S1 | S2 | S3 | S4 | Total \n${data.teama_name} ${data.sets.teamA.join(' | ')} | ${data.total.teamA} ${data.teamb_name} ${data.sets.teamB.join(' | ')} | ${data.total.teamB} ${(new Date(data.date)).toLocaleString()}`;
+        const formattedData = `S1 | S2 | S3 | S4 | Total \n${data.teama_name} | ${data.result} ${data.teamb_name} | ${(new Date(data.date)).toLocaleString()}`;
+        navigator.clipboard.writeText(formattedData).then(() => {
+          alert('Match data copied to clipboard!');
+        }, (err) => {
+          console.error('Could not copy text: ', err);
+        });
+      });
+    }
+
+    // Funkcja usuwająca mecz
+    function deleteMatch(matchId) {
+      fetch(`/matches/${matchId}`, {
+        method: 'DELETE'
+      })
+      .then(res => {
+        if (res.ok) {
+          alert('Match deleted!');
+          location.reload(); // Przeładuj stronę, aby odświeżyć listę meczów
+        } else {
+          alert('Failed to delete match.');
+        }
+      });
+    }
+
+    function deleteMatch(id) {
+      if (confirm('Delete this match?')) {
+        fetch(`/matches/${id}`, { method: 'DELETE' })
+          .then(() => updateMatchList(filterStatus.value));
+      }
+    }
 
     // Formularz dodawania nowego meczu
     const addMatchForm = document.getElementById('addMatchForm');
     if (addMatchForm) {
-      //- console.log("Add match form found!");  // Log, if form is found
-      //- document.getElementById('submitMatch').addEventListener('click', function (e) {
-      //-   e.preventDefault();
-      //-   console.log("Button clicked");  // Check if submit event is triggered
-        
-      //-   const teamA = document.getElementById('teamA').value;
-      //-   const teamB = document.getElementById('teamB').value;
-      //-   const matchDate = document.getElementById('matchDate').value;
-      //-   const status = document.getElementById('status').value;
-
-      //-   console.log("Adding new match teamA: " + teamA + " teamB: " + teamB + " date: " + matchDate + " status: " + status);
-        
-      //-   const newMatch = {
-      //-     teamA_name: teamA,
-      //-     teamB_name: teamB,
-      //-     date: matchDate,
-      //-     result: '0:0', // Default result
-      //-     status: status
-      //-   };
-
-      //-   // Wyślij dane do serwera
-      //-   fetch('/matches', {
-      //-     method: 'POST',
-      //-     headers: {
-      //-       'Content-Type': 'application/json',
-      //-     },
-      //-     body: JSON.stringify(newMatch)
-      //-   })
-      //-   .then(res => res.json())
-      //-   .then(data => {
-      //-     console.log("Match added: ", data);  // Log response from server
-      //-     // Dodaj nowy mecz do tabeli
-      //-     const row = document.createElement('tr');
-      //-     row.innerHTML = `<td>${(new Date(data.date)).toLocaleString()}</td><td>${data.teama_name}</td><td>${data.teamb_name}</td><td>${data.result}</td><td>${data.status}</td>`;
-      //-     const matchesList = document.getElementById('matchesList');
-      //-     matchesList.appendChild(row);
-
-      //-     // Zamknij modal
-      //-     const modal = bootstrap.Modal.getInstance(document.getElementById('addMatchModal'));
-      //-     modal.hide();
-      //-   })
-      //-   .catch(error => {
-      //-     console.error("Error adding match: ", error);  // Log error, if any
-      //-   });
-      //- });
-
       addMatchForm.addEventListener('submit', function (e) {
         e.preventDefault();
         console.log("Form submitted");  // Check if submit event is triggered
@@ -130,13 +179,14 @@ script.
         const matchDate = document.getElementById('matchDate').value;
         const status = document.getElementById('status').value;
 
-        console.log("Adding new match teamA: " + teamA + " teamB: " + teamB + " date: " + matchDate + " status: " + status);
-        
         const newMatch = {
           teamA_name: teamA,
           teamB_name: teamB,
           date: matchDate,
           result: '0:0', // Default result
+          resultDetailed: {
+            resD: ['0:0']
+          },
           status: status
         };
 
@@ -161,6 +211,7 @@ script.
           const modal = bootstrap.Modal.getInstance(document.getElementById('addMatchModal'));
           document.getElementById("addMatchForm").reset()
           modal.hide();
+          updateMatchList(filterStatus.value);
         })
         .catch(error => {
           console.error("Error adding match: ", error);  // Log error, if any
@@ -170,8 +221,3 @@ script.
       console.error("Add match form not found!");  // Log if form isn't found
     }
   });
-
-      // WebSocket: Aktualizacja meczu
-      //- socket.on('updateScore', data => {
-      //-   // Zaktualizuj wynik meczu na liście
-      //- });

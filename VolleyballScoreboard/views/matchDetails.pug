@@ -1,0 +1,238 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='UTF-8')
+    meta(name='viewport' content='width=device-width, initial-scale=1.0')
+    title Match Details
+    link(href='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css' rel='stylesheet')
+    script(src='https://code.jquery.com/jquery-3.6.0.min.js')
+
+  body
+    .container
+      h1.text-center Match in Progress
+      
+      // Sekcja drużyn
+      .row.mb-4
+        .col-md-5.text-center
+          h3#teamAName Team A
+          h4#teamASets 0 Sets Won
+        .col-md-2.text-center
+          button.btn.btn-warning#swapSidesBtn Swap Sides
+        .col-md-5.text-center
+          h3#teamBName Team B
+          h4#teamBSets 0 Sets Won
+
+      // Wynik w bieżącym secie
+      .row.mb-4
+        .col-md-5.text-center
+          h1#teamACurrentSetScore
+            button.btn.btn-secondary.btn-lg#teamAIncrement 0
+          button.btn.btn-danger#teamADecrement -1
+        .col-md-2.text-center
+          h5#matchStatus Status: PLANNED
+        .col-md-5.text-center
+          h1#teamBCurrentSetScore
+            button.btn.btn-secondary.btn-lg#teamBIncrement 0
+          button.btn.btn-danger#teamBDecrement -1
+
+      // Czas trwania meczu i seta
+      .row.mb-4
+        .col-md-4.text-center
+          h5 Match Duration
+          h3#matchDuration 00:00:00
+        .col-md-4.text-center
+          h5 Set Duration
+          h3#setDuration 00:00:00
+        .col-md-4.text-center
+          h5 Current Time
+          h3#currentTime
+
+      // Przyciski zakończenia seta i meczu
+      .row.mb-4
+        .col-md-6.text-center
+          button.btn.btn-primary#endSetBtn End Set
+        .col-md-6.text-center
+          button.btn.btn-danger#endMatchBtn End Match
+
+      // Powrót
+      .row.mb-4
+        .col-md-12.text-center
+          button.btn.btn-secondary#closeViewBtn Close and Return
+
+    script(src='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js')
+    //- script(src='/js/matchDetails')
+script.
+  document.addEventListener('DOMContentLoaded', function () {
+  const socket = new WebSocket('ws://localhost:4000/');
+  console.log("DOM loaded");
+  let result;
+  let status;
+  let resultDetailed;
+  let matchData;
+  
+  socket.addEventListener('message', function (event) {
+    console.log("WebSocket message received. Action: " + event.action);
+    matchData = JSON.parse(event.data);
+
+    // Aktualizacja interfejsu na podstawie odebranych danych meczu
+    result = matchData.result;
+    resultDetailed = matchData.resultdetailed;
+    status = matchData.status;
+    let currentSetResult = matchData.resultdetailed.resD[matchData.resultdetailed.resD.length - 1]
+    console.log('Current set result: ' + currentSetResult);
+    document.getElementById('teamAIncrement').innerHTML = currentSetResult.split(":")[0];
+    document.getElementById('teamBIncrement').innerHTML = currentSetResult.split(":")[1];
+    document.getElementById('teamAName').innerHTML = matchData.teama_name;
+    document.getElementById('teamBName').innerHTML = matchData.teamb_name;
+    document.getElementById('teamBName').innerHTML = matchData.teamb_name;
+    document.getElementById('matchStatus').innerHTML = matchData.status;
+    document.getElementById('teamASets').innerHTML = result.split(":")[0];
+    document.getElementById('teamBSets').innerHTML = result.split(":")[1];
+
+    checkSetEnd();
+    checkMatchEnd();
+    //document.getElementById('resultDetailed').value = JSON.stringify(matchData.ResultDetailed, null, 2);
+    
+    // Jeśli mecz zakończony, wyłącz kontrolki
+    if (matchData.status === 'FINISHED') {
+      document.querySelectorAll('button, input, textarea').forEach(el => el.disabled = true);
+      document.getElementById('closeViewBtn').disabled = false;
+    }
+  });
+
+  // Funkcje do obsługi logiki gry (sety, punkty, zmiana stron)
+  function updateScore(team, increment) {
+    if(parseInt(document.getElementById(`teamAIncrement`).innerHTML) == 0 && parseInt(document.getElementById(`teamBIncrement`).innerHTML) == 0 && 
+      result == "0:0" &&  document.getElementById('matchStatus').innerHTML == "PLANNED") {
+         document.getElementById('matchStatus').innerHTML = "IN PROGRESS";
+         matchData.status = "IN PROGRESS"; 
+      }
+    const currentScore = parseInt(document.getElementById(`${team}Increment`).innerHTML);
+    const newScore = currentScore + increment;
+    console.log("incrementing " + team + " score " + currentScore + " to " + newScore);
+    
+
+    if (newScore >= 0) {
+      document.getElementById(`${team}Increment`).innerHTML = newScore;
+      const teamAScore = parseInt(document.getElementById('teamAIncrement').innerHTML);
+      const teamBScore = parseInt(document.getElementById('teamBIncrement').innerHTML);
+      matchData.resultdetailed.resD[matchData.resultdetailed.resD.length - 1] = `${teamAScore}:${teamBScore}`;
+      emitUpdateMatch();
+      checkSetEnd();
+    }
+  }
+
+  function checkSetEnd() {
+    const teamAScore = parseInt(document.getElementById('teamAIncrement').innerHTML);
+    const teamBScore = parseInt(document.getElementById('teamBIncrement').innerHTML);
+
+    if ((teamAScore >= 25 || teamBScore >= 25) && Math.abs(teamAScore - teamBScore) >= 2) {
+      document.getElementById('endSetBtn').disabled = false;
+    } else {
+      document.getElementById('endSetBtn').disabled = true;
+    }
+  }
+
+  function endSet() {
+    const teamAScore = parseInt(document.getElementById('teamAIncrement').innerHTML);
+    const teamBScore = parseInt(document.getElementById('teamBIncrement').innerHTML);
+    const teamASets = parseInt(document.getElementById('teamASets').innerHTML);
+    const teamBSets = parseInt(document.getElementById('teamBSets').innerHTML);
+    console.log("Ending set, result is " + teamAScore + ":" + teamBScore);
+
+
+    if ((teamAScore >= 25 || teamBScore >= 25) && Math.abs(teamAScore - teamBScore) >= 2) {
+      // Zakończ set, zaktualizuj wynik szczegółowy
+      if(teamAScore > teamBScore) {
+        document.getElementById('teamASets').innerHTML = teamASets + 1;
+      } else {
+        document.getElementById('teamBSets').innerHTML = teamBSets + 1;
+      }
+      result = document.getElementById('teamASets').innerHTML + ":" + document.getElementById('teamBSets').innerHTML;
+      if(matchData.resultdetailed.resD.length < 5 && matchData.result.split(":")[0] < 3 && matchData.result.split(":")[1] < 3) {
+      matchData.resultdetailed.resD.push(`0:0`);
+      }
+      matchData.result = result;
+      matchData.resultdetailed = resultDetailed;
+      
+
+      // Resetuj wynik dla nowego seta
+      document.getElementById('teamAIncrement').innerHTML = 0;
+      document.getElementById('teamBIncrement').innerHTML = 0;
+      checkSetEnd();
+      checkMatchEnd();
+      
+      // Wyślij aktualizację do serwera przez WebSocket
+      emitUpdateMatch();
+    }
+  }
+
+  // Obsługa zmiany stron
+  document.getElementById('swapSidesBtn').addEventListener('click', function () {
+    const teamA = document.getElementById('teamAName').innerHTML;
+    const teamB = document.getElementById('teamBName').innerHTML;
+    console.log("Swapping teams. Now teamA: " + teamA + ", teamB: " + teamB);
+
+
+    // Zamień drużyny miejscami
+    document.getElementById('teamAName').innerHTML = teamB;
+    document.getElementById('teamBName').innerHTML = teamA;
+  });
+
+  // Zakończenie meczu po spełnieniu warunków
+  function checkMatchEnd() {
+    const teamAWins = parseInt(document.getElementById('teamASets').innerHTML);
+    const teamBWins = parseInt(document.getElementById('teamBSets').innerHTML);
+    if (teamAWins === 3 || teamBWins === 3) { 
+      document.getElementById('endMatchBtn').disabled = false;
+    } else {
+      document.getElementById('endMatchBtn').disabled = true;
+    }
+  }
+
+  function endMatch() {
+    //- const teamAWins = resultDetailed.resD.filter(set => set.split(":")[0] > set.split(":")[1]).length;
+    //- const teamBWins = resultDetailed.resD.filter(set => set.split(":")[1] > set.split(":")[0]).length;
+    const teamAWins = parseInt(document.getElementById('teamASets').innerHTML);
+    const teamBWins = parseInt(document.getElementById('teamBSets').innerHTML);
+    if (teamAWins === 3 || teamBWins === 3) {
+      // Zakończ mecz, wyślij dane do serwera
+      document.getElementById('matchStatus').innerHTML = 'FINISHED';
+      matchData.result = result = `${teamAWins}:${teamBWins}`;
+      matchData.status = 'FINISHED';
+      emitUpdateMatch();
+
+      // lock all controls except returning to match list
+      document.querySelectorAll('input, textarea, button').forEach(el => el.disabled = true);
+      document.getElementById('closeViewBtn').disabled = false;
+    }
+  }
+
+  function emitUpdateMatch() {
+        socket.send(JSON.stringify({
+        action: 'matchDataChanged',
+        date: matchData.date,
+        teama_name: matchData.teama_name,
+        teamb_name: matchData.teamb_name,
+        id: matchData.id,
+        result: matchData.result,
+        resultdetailed: matchData.resultdetailed,
+        status: matchData.status
+      }));
+  }
+
+  // end set/match buttons
+  document.getElementById('endSetBtn').addEventListener('click', () => endSet());
+  document.getElementById('endMatchBtn').addEventListener('click', () => endMatch());
+
+  // score inc/dec buttons
+  document.getElementById('teamAIncrement').addEventListener('click', () => updateScore('teamA', 1));
+  document.getElementById('teamBIncrement').addEventListener('click', () => updateScore('teamB', 1));
+  document.getElementById('teamADecrement').addEventListener('click', () => updateScore('teamA', -1));
+  document.getElementById('teamBDecrement').addEventListener('click', () => updateScore('teamB', -1));
+
+  // Back to match list view
+  document.getElementById('closeViewBtn').addEventListener('click', () => window.location.href = "/")
+  });
+
+

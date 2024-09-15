@@ -6,10 +6,11 @@ var logger = require('morgan');
 var http = require('http');
 var server = http.createServer(app);
 // var { Server } = require('socket.io');
-
+var { wss } = require('./routes/matches').wss;
 
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
+var matchesRouter = require('./routes/matches').router;
 
 var app = express();
 
@@ -20,6 +21,13 @@ var connectionString = 'postgresql://volleyballdb_owner:wdAz4V9vLPqi@ep-shiny-su
 // Tworzenie połączenia do bazy danych
 var pool = new Pool({
   connectionString: connectionString
+});
+
+// Ustawienia WebSocket
+server.on('upgrade', (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
 });
 
 // var io = new Server(server); // Tworzenie serwera WebSocket
@@ -36,6 +44,7 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/', indexRouter);
+app.use('/matches', matchesRouter);
 
 // Endpoint do renderowania strony głównej
 app.get('/', (req, res, next) => {
@@ -47,6 +56,26 @@ app.get('/matches', async (req, res, next) => {
   try {
     const result = await pool.query('SELECT * FROM mecze ORDER BY date DESC');
     res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/matches/:id', (req, res, next) => {
+  try {
+    const matchId = req.params.id;
+    pool.query(`DELETE FROM mecze WHERE id = ${matchId}`);
+    res.sendStatus(200);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/matches/:id', async (req, res, next) => {
+  try {
+    const matchId = req.params.id;
+    const result = await pool.query(`SELECT * FROM mecze WHERE id = ${matchId}`);
+    res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }
@@ -73,14 +102,6 @@ app.post('/matches', async (req, res, next) => {
   }
 });
 
-// // WebSocket: Nasłuchiwanie połączenia
-// io.on('connection', (socket) => {
-//   console.log('A user connected');
-//   socket.on('disconnect', () => {
-//     console.log('A user disconnected');
-//   });
-// });
-
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
   next(createError(404));
@@ -97,8 +118,5 @@ app.use(function(err, req, res, next) {
   res.render('error');
 });
 
-// server.listen(3000, () => {
-//   console.log('Server is running on http://localhost:3000');
-// });
 
 module.exports = app;
