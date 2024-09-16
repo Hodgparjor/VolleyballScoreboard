@@ -14,23 +14,19 @@ var matchesRouter = require('./routes/matches').router;
 
 var app = express();
 
-// Moduły bazy danych
+// Database
 var { Pool } = require('pg');
 var connectionString = 'postgresql://volleyballdb_owner:wdAz4V9vLPqi@ep-shiny-sun-a2r1vzmn.eu-central-1.aws.neon.tech/volleyballdb?sslmode=require';
-
-// Tworzenie połączenia do bazy danych
 var pool = new Pool({
   connectionString: connectionString
 });
 
-// Ustawienia WebSocket
+// Websocket
 server.on('upgrade', (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (ws) => {
     wss.emit('connection', ws, request);
   });
 });
-
-// var io = new Server(server); // Tworzenie serwera WebSocket
 
 
 // view engine setup
@@ -46,12 +42,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/', indexRouter);
 app.use('/matches', matchesRouter);
 
-// Endpoint do renderowania strony głównej
 app.get('/', (req, res, next) => {
-  res.render('index'); // Renderowanie pliku index.pug
+  res.render('index');
 });
 
-// Endpoint do pobierania meczów z bazy danych
+
 app.get('/matches', async (req, res, next) => {
   try {
     const result = await pool.query('SELECT * FROM mecze ORDER BY date DESC');
@@ -81,7 +76,7 @@ app.get('/matches/:id', async (req, res, next) => {
   }
 });
 
-// Endpoint do dodawania nowego meczu
+
 app.post('/matches', async (req, res, next) => {
   const { date, teamA_name, teamB_name, result, resultDetailed, status } = req.body;
   try {
@@ -93,8 +88,6 @@ app.post('/matches', async (req, res, next) => {
     const values = [date, teamA_name, teamB_name, result, resultDetailed, status];
     const actionResult = await pool.query(insertQuery, values);
     
-    // // Emitowanie aktualizacji WebSocketów po dodaniu meczu
-    // io.emit('updateScore', result.rows[0]);
 
     res.json(actionResult.rows[0]);
   } catch (err) {

@@ -38,10 +38,10 @@ html(lang='en')
       // Czas trwania meczu i seta
       .row.mb-4
         .col-md-4.text-center
-          h5 Match Duration
+          h5#matchDurationLabel Match Duration
           h3#matchDuration 00:00:00
         .col-md-4.text-center
-          h5 Set Duration
+          h5#setDurationLabel Set Duration
           h3#setDuration 00:00:00
         .col-md-4.text-center
           h5 Current Time
@@ -65,58 +65,94 @@ script.
   document.addEventListener('DOMContentLoaded', function () {
   const socket = new WebSocket('ws://localhost:4000/');
   console.log("DOM loaded");
+  
+  // tmp data holding variables
   let result;
   let status;
   let resultDetailed;
   let matchData;
+  //- let swapped = false;
+
+  // Time variables
+  let matchStartTime = null;
+  let setStartTime = null;
   
   socket.addEventListener('message', function (event) {
-    console.log("WebSocket message received. Action: " + event.action);
-    matchData = JSON.parse(event.data);
+    eventData = JSON.parse(event.data);
+    console.log("WebSocket message received. Action: " + eventData.action);
 
-    // Aktualizacja interfejsu na podstawie odebranych danych meczu
-    result = matchData.result;
-    resultDetailed = matchData.resultdetailed;
-    status = matchData.status;
-    let currentSetResult = matchData.resultdetailed.resD[matchData.resultdetailed.resD.length - 1]
-    console.log('Current set result: ' + currentSetResult);
-    document.getElementById('teamAIncrement').innerHTML = currentSetResult.split(":")[0];
-    document.getElementById('teamBIncrement').innerHTML = currentSetResult.split(":")[1];
-    document.getElementById('teamAName').innerHTML = matchData.teama_name;
-    document.getElementById('teamBName').innerHTML = matchData.teamb_name;
-    document.getElementById('teamBName').innerHTML = matchData.teamb_name;
-    document.getElementById('matchStatus').innerHTML = matchData.status;
-    document.getElementById('teamASets').innerHTML = result.split(":")[0];
-    document.getElementById('teamBSets').innerHTML = result.split(":")[1];
+    if(eventData.action == 'matchDataChanged') {
+      if(!matchData || matchData.id == eventData.id) {
+        matchData = eventData;
+        result = matchData.result;
+        resultDetailed = matchData.resultdetailed;
+        status = matchData.status;
+        if(!matchData.swapped) {
+          matchData.swapped = false;
+        }
+        let currentSetResult = matchData.resultdetailed.resD[matchData.resultdetailed.resD.length - 1]
+        document.getElementById('matchStatus').innerHTML = matchData.status;
+        refreshTeamsUI()
 
-    checkSetEnd();
-    checkMatchEnd();
-    //document.getElementById('resultDetailed').value = JSON.stringify(matchData.ResultDetailed, null, 2);
-    
-    // Jeśli mecz zakończony, wyłącz kontrolki
-    if (matchData.status === 'FINISHED') {
-      document.querySelectorAll('button, input, textarea').forEach(el => el.disabled = true);
-      document.getElementById('closeViewBtn').disabled = false;
+        if (matchData.status === 'IN PROGRESS' && !matchStartTime) {
+          // Set times if match started, and no time is recorded
+          matchStartTime = new Date();
+          setStartTime = new Date(); 
+        } else {
+          if (matchData.matchStartTime) {
+            matchStartTime = new Date(matchData.matchStartTime);
+          }
+          if (matchData.setStartTime) {
+            setStartTime = new Date(matchData.setStartTime);
+          }
+        }
+
+        checkSetEnd();
+        checkMatchEnd();
+
+        // Disable controlls for finished match
+        if (matchData.status === 'FINISHED') {
+          document.querySelectorAll('button, input, textarea').forEach(el => el.disabled = true);
+          document.getElementById('closeViewBtn').disabled = false;
+        }
+      }
     }
+
   });
 
-  // Funkcje do obsługi logiki gry (sety, punkty, zmiana stron)
+  // Increment score for specified team
   function updateScore(team, increment) {
+    // If not started yet, start match upon first point
     if(parseInt(document.getElementById(`teamAIncrement`).innerHTML) == 0 && parseInt(document.getElementById(`teamBIncrement`).innerHTML) == 0 && 
-      result == "0:0" &&  document.getElementById('matchStatus').innerHTML == "PLANNED") {
-         document.getElementById('matchStatus').innerHTML = "IN PROGRESS";
-         matchData.status = "IN PROGRESS"; 
+      matchData.result == "0:0" &&  document.getElementById('matchStatus').innerHTML == "PLANNED") {
+        document.getElementById('matchStatus').innerHTML = "IN PROGRESS";
+        matchData.status = "IN PROGRESS"; 
+        matchStartTime = new Date();
+        setStartTime = new Date();
+        matchData.matchStartTime = matchStartTime.toISOString();
+        matchData.setStartTime = setStartTime.toISOString();
       }
+      
     const currentScore = parseInt(document.getElementById(`${team}Increment`).innerHTML);
     const newScore = currentScore + increment;
     console.log("incrementing " + team + " score " + currentScore + " to " + newScore);
     
 
-    if (newScore >= 0) {
+    // Update score and send info to websocket client, ensure score does not go below zero
+    if (newScore >= 0 && matchData.result.split(":")[0] != "3" && matchData.result.split(":")[1] != "3") {
+      const teamAOldScore = parseInt(document.getElementById('teamAIncrement').innerHTML);
+      const teamBOldScore = parseInt(document.getElementById('teamBIncrement').innerHTML);
       document.getElementById(`${team}Increment`).innerHTML = newScore;
       const teamAScore = parseInt(document.getElementById('teamAIncrement').innerHTML);
       const teamBScore = parseInt(document.getElementById('teamBIncrement').innerHTML);
-      matchData.resultdetailed.resD[matchData.resultdetailed.resD.length - 1] = `${teamAScore}:${teamBScore}`;
+      if(matchData.swapped) { // Reverse score when saving if sides are swapped
+        matchData.resultdetailed.resD[matchData.resultdetailed.resD.length - 1] = `${teamBScore}:${teamAScore}`;
+      } else {
+        matchData.resultdetailed.resD[matchData.resultdetailed.resD.length - 1] = `${teamAScore}:${teamBScore}`;
+      }
+      if(teamAOldScore < 8 && teamBOldScore < 8 && (teamAScore == 8 || teamBScore == 8) && matchData.result == "2:2") {
+        swapSides();
+      }
       emitUpdateMatch();
       checkSetEnd();
     }
@@ -125,8 +161,10 @@ script.
   function checkSetEnd() {
     const teamAScore = parseInt(document.getElementById('teamAIncrement').innerHTML);
     const teamBScore = parseInt(document.getElementById('teamBIncrement').innerHTML);
+    const teamASets = parseInt(document.getElementById('teamASets').innerHTML);
+    const teamBSets = parseInt(document.getElementById('teamBSets').innerHTML);
 
-    if ((teamAScore >= 25 || teamBScore >= 25) && Math.abs(teamAScore - teamBScore) >= 2) {
+    if ((teamAScore >= 25 || teamBScore >= 25 || (teamASets == 2 && teamBSets == 2 && (teamAScore >= 15 || teamBScore >= 15))) && Math.abs(teamAScore - teamBScore) >= 2 && teamASets < 3 && teamBSets < 3) {
       document.getElementById('endSetBtn').disabled = false;
     } else {
       document.getElementById('endSetBtn').disabled = true;
@@ -141,7 +179,7 @@ script.
     console.log("Ending set, result is " + teamAScore + ":" + teamBScore);
 
 
-    if ((teamAScore >= 25 || teamBScore >= 25) && Math.abs(teamAScore - teamBScore) >= 2) {
+    if (((teamAScore >= 25 || teamBScore >= 25) || (teamASets == 2 && teamBSets == 2 && (teamAScore >= 15 || teamBScore >= 15))) && Math.abs(teamAScore - teamBScore) >= 2) {
       // Zakończ set, zaktualizuj wynik szczegółowy
       if(teamAScore > teamBScore) {
         document.getElementById('teamASets').innerHTML = teamASets + 1;
@@ -149,37 +187,66 @@ script.
         document.getElementById('teamBSets').innerHTML = teamBSets + 1;
       }
       result = document.getElementById('teamASets').innerHTML + ":" + document.getElementById('teamBSets').innerHTML;
+
+      // Add new set if match is not finished
       if(matchData.resultdetailed.resD.length < 5 && matchData.result.split(":")[0] < 3 && matchData.result.split(":")[1] < 3) {
-      matchData.resultdetailed.resD.push(`0:0`);
+        matchData.resultdetailed.resD.push(`0:0`);
+        setStartTime = new Date();
+        matchData.setStartTime = setStartTime.toISOString();
+        swapSides();
       }
       matchData.result = result;
       matchData.resultdetailed = resultDetailed;
       
 
-      // Resetuj wynik dla nowego seta
+      // Reset scores for new set
       document.getElementById('teamAIncrement').innerHTML = 0;
       document.getElementById('teamBIncrement').innerHTML = 0;
       checkSetEnd();
       checkMatchEnd();
       
-      // Wyślij aktualizację do serwera przez WebSocket
+      // update through websocket
       emitUpdateMatch();
+      socket.send(JSON.stringify({
+        action: 'matchResultChanged'
+      }));
     }
   }
 
-  // Obsługa zmiany stron
+  // Swap teams
   document.getElementById('swapSidesBtn').addEventListener('click', function () {
-    const teamA = document.getElementById('teamAName').innerHTML;
-    const teamB = document.getElementById('teamBName').innerHTML;
-    console.log("Swapping teams. Now teamA: " + teamA + ", teamB: " + teamB);
-
-
-    // Zamień drużyny miejscami
-    document.getElementById('teamAName').innerHTML = teamB;
-    document.getElementById('teamBName').innerHTML = teamA;
+    swapSides();
   });
 
-  // Zakończenie meczu po spełnieniu warunków
+  function swapSides() {
+    matchData.swapped = !matchData.swapped;
+    refreshTeamsUI()
+  }
+
+  function refreshTeamsUI() {
+    if (matchData.swapped) {
+      document.getElementById('teamAName').innerHTML = matchData.teamb_name;
+      document.getElementById('teamBName').innerHTML = matchData.teama_name;
+
+      document.getElementById('teamASets').innerHTML = result.split(":")[1];
+      document.getElementById('teamBSets').innerHTML = result.split(":")[0];
+
+      let currentSetResult = matchData.resultdetailed.resD[matchData.resultdetailed.resD.length - 1];
+      document.getElementById('teamAIncrement').innerHTML = currentSetResult.split(":")[1];
+      document.getElementById('teamBIncrement').innerHTML = currentSetResult.split(":")[0];
+    } else {
+      document.getElementById('teamAName').innerHTML = matchData.teama_name;
+      document.getElementById('teamBName').innerHTML = matchData.teamb_name;
+
+      document.getElementById('teamASets').innerHTML = result.split(":")[0];
+      document.getElementById('teamBSets').innerHTML = result.split(":")[1];
+
+      let currentSetResult = matchData.resultdetailed.resD[matchData.resultdetailed.resD.length - 1];
+      document.getElementById('teamAIncrement').innerHTML = currentSetResult.split(":")[0];
+      document.getElementById('teamBIncrement').innerHTML = currentSetResult.split(":")[1];
+    }
+  }
+
   function checkMatchEnd() {
     const teamAWins = parseInt(document.getElementById('teamASets').innerHTML);
     const teamBWins = parseInt(document.getElementById('teamBSets').innerHTML);
@@ -191,16 +258,16 @@ script.
   }
 
   function endMatch() {
-    //- const teamAWins = resultDetailed.resD.filter(set => set.split(":")[0] > set.split(":")[1]).length;
-    //- const teamBWins = resultDetailed.resD.filter(set => set.split(":")[1] > set.split(":")[0]).length;
     const teamAWins = parseInt(document.getElementById('teamASets').innerHTML);
     const teamBWins = parseInt(document.getElementById('teamBSets').innerHTML);
     if (teamAWins === 3 || teamBWins === 3) {
-      // Zakończ mecz, wyślij dane do serwera
       document.getElementById('matchStatus').innerHTML = 'FINISHED';
       matchData.result = result = `${teamAWins}:${teamBWins}`;
       matchData.status = 'FINISHED';
       emitUpdateMatch();
+      socket.send(JSON.stringify({
+        action: 'matchResultChanged'
+      }));
 
       // lock all controls except returning to match list
       document.querySelectorAll('input, textarea, button').forEach(el => el.disabled = true);
@@ -217,9 +284,13 @@ script.
         id: matchData.id,
         result: matchData.result,
         resultdetailed: matchData.resultdetailed,
-        status: matchData.status
+        status: matchData.status,
+        matchStartTime: matchData.matchStartTime,
+        setStartTime: matchData.setStartTime,
+        swapped: matchData.swapped
       }));
   }
+  
 
   // end set/match buttons
   document.getElementById('endSetBtn').addEventListener('click', () => endSet());
@@ -233,6 +304,58 @@ script.
 
   // Back to match list view
   document.getElementById('closeViewBtn').addEventListener('click', () => window.location.href = "/")
+
+  // Timers
+  setInterval(updateDateTime, 1000);
+
+  function updateDateTime() {
+    const now = new Date();
+    const currentDateTime = now.toLocaleString();
+    document.getElementById("currentTime").innerHTML = currentDateTime;
+
+    if(matchData.status == "FINISHED") {
+      setEmptyTimeLabels(); 
+    } else {
+      // Update match time
+      if (matchStartTime) {
+        const matchElapsed = now - matchStartTime;
+        document.getElementById("matchDuration").innerHTML = formatTime(matchElapsed);
+      }
+
+      // Update set time
+      if (setStartTime) {
+        const setElapsed = now - setStartTime;
+        document.getElementById("setDuration").innerHTML = formatTime(setElapsed);
+      }
+      if(matchData.status == "IN PROGRESS" && (setStartTime || matchStartTime)) {
+        emitUpdateMatch()
+      }
+    }
+
+    
+  }
+
+// "hide" set and match time labels
+  function setEmptyTimeLabels() {
+      document.getElementById("matchDuration").innerHTML = "";
+      document.getElementById("matchDurationLabel").innerHTML = "";
+      document.getElementById("setDuration").innerHTML = "";
+      document.getElementById("setDurationLabel").innerHTML = "";
+  }
+
+// Format into hh:mm:ss
+  function formatTime(duration) {
+    const totalSeconds = Math.floor(duration / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  }
+
+  function pad(num) {
+    return num.toString().padStart(2, '0');
+  }
+
   });
 
 
