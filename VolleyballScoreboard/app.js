@@ -49,7 +49,7 @@ app.get('/', (req, res, next) => {
 
 app.get('/matches', async (req, res, next) => {
   try {
-    const result = await pool.query('SELECT * FROM mecze ORDER BY date DESC');
+    const result = await pool.query('SELECT * FROM mecze ORDER BY date ASC');
     res.json(result.rows);
   } catch (err) {
     next(err);

@@ -11,7 +11,7 @@ html(lang='en')
     .container
       h1.text-center Match in Progress
       
-      // Sekcja drużyn
+      // Team names and sets
       .row.mb-4
         .col-md-5.text-center
           h3#teamAName Team A
@@ -22,7 +22,7 @@ html(lang='en')
           h3#teamBName Team B
           h4#teamBSets 0 Sets Won
 
-      // Wynik w bieżącym secie
+      // Score buttons
       .row.mb-4
         .col-md-5.text-center
           h1#teamACurrentSetScore
@@ -35,7 +35,7 @@ html(lang='en')
             button.btn.btn-secondary.btn-lg#teamBIncrement 0
           button.btn.btn-danger#teamBDecrement -1
 
-      // Czas trwania meczu i seta
+      // Time
       .row.mb-4
         .col-md-4.text-center
           h5#matchDurationLabel Match Duration
@@ -47,20 +47,19 @@ html(lang='en')
           h5 Current Time
           h3#currentTime
 
-      // Przyciski zakończenia seta i meczu
+      // End match or set
       .row.mb-4
         .col-md-6.text-center
           button.btn.btn-primary#endSetBtn End Set
         .col-md-6.text-center
           button.btn.btn-danger#endMatchBtn End Match
 
-      // Powrót
+      // Close
       .row.mb-4
         .col-md-12.text-center
           button.btn.btn-secondary#closeViewBtn Close and Return
 
     script(src='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js')
-    //- script(src='/js/matchDetails')
 script.
   document.addEventListener('DOMContentLoaded', function () {
   const socket = new WebSocket('ws://localhost:4000/');
@@ -186,10 +185,16 @@ script.
       } else {
         document.getElementById('teamBSets').innerHTML = teamBSets + 1;
       }
-      result = document.getElementById('teamASets').innerHTML + ":" + document.getElementById('teamBSets').innerHTML;
+
+      if(!matchData.swapped) {
+        result = document.getElementById('teamASets').innerHTML + ":" + document.getElementById('teamBSets').innerHTML;
+      } else {
+        result =  document.getElementById('teamBSets').innerHTML + ":" + document.getElementById('teamASets').innerHTML;
+
+      }
 
       // Add new set if match is not finished
-      if(matchData.resultdetailed.resD.length < 5 && matchData.result.split(":")[0] < 3 && matchData.result.split(":")[1] < 3) {
+      if(matchData.resultdetailed.resD.length < 5 && parseInt(result.split(":")[0]) < 3 && parseInt(result.split(":")[1]) < 3) {
         matchData.resultdetailed.resD.push(`0:0`);
         setStartTime = new Date();
         matchData.setStartTime = setStartTime.toISOString();
@@ -331,11 +336,8 @@ script.
         emitUpdateMatch()
       }
     }
-
-    
   }
 
-// "hide" set and match time labels
   function setEmptyTimeLabels() {
       document.getElementById("matchDuration").innerHTML = "";
       document.getElementById("matchDurationLabel").innerHTML = "";
@@ -343,7 +345,6 @@ script.
       document.getElementById("setDurationLabel").innerHTML = "";
   }
 
-// Format into hh:mm:ss
   function formatTime(duration) {
     const totalSeconds = Math.floor(duration / 1000);
     const hours = Math.floor(totalSeconds / 3600);

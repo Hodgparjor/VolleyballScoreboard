@@ -28,9 +28,8 @@ html(lang='en')
                 th Status
                 th Actions
             tbody#matchesList
-              // Mecze zostaną załadowane z API
 
-    // Modal do dodawania nowego meczu
+    // Add new match modal
     .modal.fade#addMatchModal(tabindex='-1' aria-labelledby='addMatchModalLabel' aria-hidden='true')
       .modal-dialog
         .modal-content
@@ -59,6 +58,7 @@ script.
     console.log("DOM fully loaded and parsed");
     updateMatchList();
     const socket = new WebSocket('ws://localhost:4000/');
+    
     socket.addEventListener('message', function (event) {
       const data = JSON.parse(event.data);
       if(data.action === 'matchResultChanged') {
